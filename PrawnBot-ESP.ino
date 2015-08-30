@@ -1,80 +1,133 @@
-#include <PubSubClient.h>
+#include <SPI.h>
 #include <ESP8266WiFi.h>
+#include <PubSubClient.h>
 #include "secrets.h"
 const int feedButtonPin = 0;
 const int motorPin = 14;
-const int switchPin = 2;
+const int motorSwitchPin = 12;
 const int dispenseTimeout = 2000;
-const int feedButtonHoldTime = 50;
-const int debounce = 50;
-boolean disableMotor = false;
+const int debounce = 100;
 boolean motorJammed = false;
-boolean wifiConnected = false;
-const String clientName = "PrawnBot-ESP";
+char clientName[] = "PrawnBot-ESP";
+boolean somethingToSay = true;
+String messageToReport = "Online";
+long modeStartTime = 0;
+int lastAnnounced;
+int botMode = 2; // 0: Listening; 1: Dispensing; 2: Resetting; 3: Jam
+
+void callback(char* topic, byte* incoming, unsigned int length);
 
 WiFiClient wifiClient;
-PubSubClient mqtt(server, port, callback, wifiClient);
+PubSubClient client(server, 1883, callback, wifiClient);
 
-void callback(char* topic, byte* payload, unsigned int length) {
-  // handle message arrived
+void callback(char* theTopic, byte* incoming, unsigned int length) {
+  String incomingMessage = String((char *)incoming);
+  incomingMessage = incomingMessage.substring(0, length);
+  Serial.print(String(theTopic));
+  Serial.print(": ");
+  Serial.println(incomingMessage);
+  if (incomingMessage == "feed") botMode = 1;
+  else if (incomingMessage == "ping") client.publish(topic, (char*)("pong"));
 }
 
 void setup() {
   pinMode(feedButtonPin, INPUT_PULLUP);
+  pinMode(motorPin, OUTPUT);
+  pinMode(motorSwitchPin, INPUT_PULLUP);
   Serial.begin(115200);
   delay(10);
-  Serial.println("");
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  
   WiFi.begin(ssid, password);
-  
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.print(".");
+    Serial.print(":) ");
   }
   Serial.println("");
   Serial.println("WiFi connected");  
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
-
-  Serial.print("Connecting to ");
-  Serial.print(server);
-  Serial.print(" as ");
-  Serial.println(clientName);
-  
-  if (mqtt.connect((char*) clientName.c_str())) {
-    Serial.println("Connected to MQTT broker");
-    Serial.print("Topic is: ");
-    Serial.println(topic);
-    
-    if (mqtt.publish(topic, "online")) {
-      Serial.println("Publish ok");
-    }
-    else {
-      Serial.println("Publish failed");
-    }
-  } else {
-    Serial.println("MQTT connect failed");
-    Serial.println("Will reset and try again...");
-    abort();
+  if (client.connect(clientName)) {
+    client.publish(topic, (char*)("online"));
+    client.subscribe(topic);
   }
 }
 
 void loop() {
-  checkButton();
-}
-
-
-void checkButton() {
-  if (digitalRead(feedButtonPin) == LOW) {
-    long feedButtonPressedTime = millis();
-    while (digitalRead(feedButtonPin) == LOW) {
-      if (millis() - feedButtonPressedTime > feedButtonHoldTime) {
+  client.loop();
+  if (motorJammed == true) botMode = 3;
+  switch (botMode) {
+    case 0: // Listening
+      if(lastAnnounced != 0) {
+        Serial.println("Listening");
+        lastAnnounced = 0;
+      }
+      if (digitalRead(feedButtonPin) == HIGH) modeStartTime = 0;
+      else if (digitalRead(feedButtonPin) == LOW && modeStartTime == 0) modeStartTime = millis();
+      else if (digitalRead(feedButtonPin) == LOW && (millis() - modeStartTime > debounce)) {
         Serial.println("Button pressed");
-        dispense();
-        break;
-      };
-    };
-  };
+        botMode = 1;
+        modeStartTime = 0;
+      }
+    break;
+    
+    case 1: // Dispensing
+      if(lastAnnounced != 1) {
+        Serial.println("Dispensing");
+        lastAnnounced = 1;
+      }
+      if (modeStartTime == 0) modeStartTime = millis();
+      if ((digitalRead(motorSwitchPin) == LOW) && (millis() - modeStartTime > debounce)) {
+        digitalWrite(motorPin, HIGH);
+      } else if ((digitalRead(motorSwitchPin) == HIGH) && (millis() - modeStartTime > debounce)) {
+        digitalWrite(motorPin, LOW);
+        botMode = 2;
+        modeStartTime = 0;
+        if (messageToReport != "fed") somethingToSay = true;
+        messageToReport="fed";
+      }
+      if ((modeStartTime > 0) && (millis() - modeStartTime > dispenseTimeout)) {
+        botMode = 3;
+        modeStartTime = 0;
+      }
+    break;
+    
+    case 2: // Resetting
+      if(lastAnnounced != 2) {
+        Serial.println("Resetting Motor");
+        lastAnnounced = 2;
+      }
+      if (modeStartTime == 0) modeStartTime = millis();
+      if ((digitalRead(motorSwitchPin) == HIGH)) { // && (millis() - modeStartTime > debounce)) {
+        digitalWrite(motorPin, HIGH);
+      }
+      else if ((digitalRead(motorSwitchPin) == LOW) && (millis() - modeStartTime > debounce)) {
+        digitalWrite(motorPin, LOW);
+        botMode = 0;
+        modeStartTime = 0;
+        if (messageToReport != "ready") somethingToSay = true;
+        messageToReport="ready";
+      }
+      if ((modeStartTime > 0) && (millis() - modeStartTime > dispenseTimeout)) {
+        botMode = 3;
+        modeStartTime = 0;
+      }
+    break;
+
+    case 3: // Jammed
+      if(lastAnnounced != 3) {
+        Serial.println("Resetting Motor");
+        lastAnnounced = 3;
+      }
+      if (messageToReport != "jam") somethingToSay = true;
+      motorJammed = true;
+      messageToReport="jam";
+  }
+  
+  if (somethingToSay) {
+    Serial.println("Send MQTT");
+    int messageLength = messageToReport.length() + 1;
+    char messageChar[messageLength];
+    messageToReport.toCharArray(messageChar, messageLength);
+    client.publish(topic, messageChar);
+    somethingToSay = false;
+  }
 }
