@@ -37,7 +37,11 @@ void setup() {
   Serial.begin(115200);
   delay(10);
   WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
+  getOnline();
+}
+
+void getOnline(){
+   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(":) ");
   }
@@ -52,6 +56,7 @@ void setup() {
 }
 
 void loop() {
+  if(WiFi.status() != WL_CONNECTED) getOnline();
   client.loop();
   if (motorJammed == true) botMode = 3;
   switch (botMode) {
