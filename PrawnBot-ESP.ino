@@ -63,6 +63,7 @@ void getOnline(){
 
 void loop() {
   if(WiFi.status() != WL_CONNECTED) getOnline();
+  if (!mqttclient.connected()) mqttclient.connect(clientName);
   feedButtonDebounced.update();
   motorSwitchDebounced.update();
   mqttclient.loop(); //
@@ -87,7 +88,7 @@ void loop() {
         lastAnnounced = 1;
       }
       digitalWrite(motorPin, HIGH);
-      if (feedButtonDebounced.fell()){
+      if (motorSwitchDebounced.fell()){
         digitalWrite(motorPin, LOW);
         botMode = 0;
         modeStartTime = 0;
