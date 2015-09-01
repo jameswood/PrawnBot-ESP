@@ -29,7 +29,7 @@ void callback(char* theTopic, byte* incoming, unsigned int length) {
   Serial.print(String(theTopic));
   Serial.print(": ");
   Serial.println(incomingMessage);
-  if (incomingMessage == "feed") botMode = 1;
+  if (incomingMessage == "feed" && botMode != 2) botMode = 1;  //if not jammed
   else if (incomingMessage == "ping") mqttclient.publish(topic, (char*)("pong"));
 }
 
@@ -66,8 +66,7 @@ void loop() {
   if (!mqttclient.connected()) mqttclient.connect(clientName);
   feedButtonDebounced.update();
   motorSwitchDebounced.update();
-  mqttclient.loop(); //
-  if (motorJammed == true) botMode = 3;
+  mqttclient.loop();
   switch (botMode) {
     case 0: // Listening
       if(lastAnnounced != 0) {
@@ -96,7 +95,7 @@ void loop() {
         messageToReport="fed";
       }
       else if (millis() - modeStartTime > dispenseTimeout) {
-        botMode = 3;
+        botMode = 2; //jammed
         modeStartTime = 0;
       }
     break;
