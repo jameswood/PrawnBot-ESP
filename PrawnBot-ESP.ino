@@ -1,3 +1,9 @@
+// In your secrets.h file, define the following:
+// const char *ssid = "";
+// const char *password = "";
+// const int port = 1883;
+// IPAddress server(192, 168, 1, 2);
+
 #include <Bounce2.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
@@ -11,6 +17,8 @@ const unsigned int jamTimeout = 2000;
 const unsigned int networkTimeout = 5000;
 const unsigned int debounce = 50;
 const char myName[] = "PrawnBot-ESP";
+const char *controlTopic = "devices/prawnbot";
+char statusTopic[] = "devices/prawnbot/status";
 long modeStartTime = 0;
 long lastWifiConnectAttempt = 0;
 long lastMQTTConnectAttempt = 0;
