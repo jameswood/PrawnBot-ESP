@@ -59,7 +59,7 @@ void connectWifi(){
 
 boolean connectMQTT(){
   if(mqttclient.connect(myName, statusTopic, 2, true, (char*)("offline"))){
-    mqttclient.publish(statusTopic, (char*)("online"));
+    mqttclient.publish(statusTopic, (byte*)("online"), 6, true);
     mqttclient.subscribe(controlTopic);
   }
 }
@@ -93,12 +93,13 @@ void loop(){
           botMode = 0;
           modeStartTime = 0;
           Serial.println("Fed");
-          mqttclient.publish(controlTopic, (byte*)("fed"), 3, true); //3 is length
+          mqttclient.publish(controlTopic, (char*)("fed")); //3 is length
         }
         else if(millis() - modeStartTime > jamTimeout){
           botMode = 2; //jammed
           Serial.println("Jammed");
-          mqttclient.publish(statusTopic, (byte*)("jam"), 3, true); //3 is length
+          //mqttclient.publish(statusTopic, (byte*)("jam"), 3, true); //3 is length
+          mqttclient.publish(statusTopic, (char*)("jam"));
         }
       break;
     }
