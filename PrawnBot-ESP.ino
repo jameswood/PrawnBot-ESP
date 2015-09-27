@@ -1,6 +1,8 @@
 // In your secrets.h file, define the following:
-// const char *ssid = "";
-// const char *password = "";
+// char ssid[] = "";
+// char password[] = "";
+// const char *mqttUsername = "";
+// const char *mqttPassword = "";
 // const int port = 1883;
 // IPAddress server(192, 168, 1, 2);
 
@@ -23,16 +25,15 @@ long modeStartTime = 0;
 long lastWifiConnectAttempt = 0;
 long lastMQTTConnectAttempt = 0;
 int botMode = 0; // 0: Listening; 1: Dispensing; 2: Jam
-//void callback(char* topic, byte* incoming, unsigned int length);
 
 WiFiClient wifiClient;
-PubSubClient mqttclient(server, 1883, MQTTReceived, wifiClient);
+PubSubClient mqttClient(server, 1883, MQTTReceived, wifiClient);
 
 void MQTTReceived(char* incomingTopic, byte* incomingPayload, unsigned int payloadLength){
   String incomingString = String((char *)incomingPayload);
   incomingString = incomingString.substring(0, payloadLength);
   Serial.println(String(incomingTopic) + ": " + incomingString);
-  if(incomingString == "ping") mqttclient.publish(incomingTopic, (char*)("pong"));
+  if(incomingString == "ping") mqttClient.publish(incomingTopic, (char*)("pong"));
   if(incomingString == "feed" && botMode != 2) botMode = 1;  //if not jammed
 }
 
@@ -58,9 +59,9 @@ void connectWifi(){
 }
 
 boolean connectMQTT(){
-  if(mqttclient.connect(myName, statusTopic, 2, true, (char*)("offline"))){
-    mqttclient.publish(statusTopic, (byte*)("online"), 6, true);
-    mqttclient.subscribe(controlTopic);
+  if(mqttClient.connect(myName, mqttUsername, mqttPassword, statusTopic, 2, true, (char*)("offline"))){
+    mqttClient.publish(statusTopic, (byte*)("online"), 6, true);
+    mqttClient.subscribe(controlTopic);
   }
 }
 
@@ -70,38 +71,36 @@ void loop(){
       lastWifiConnectAttempt=millis();
       connectWifi();
     }
-  } else if(!mqttclient.loop()){
+  } else if(!mqttClient.loop()){
     if(millis() - lastMQTTConnectAttempt > networkTimeout){
       lastMQTTConnectAttempt=millis();
       connectMQTT();
     }
-  } else {
-    feedButtonDebounced.update();
-    motorSwitchDebounced.update();
-    switch (botMode){
-      case 0: // Listening
-        if(feedButtonDebounced.fell()){
-          Serial.println("Button pressed");
-          botMode = 1;
-        }
-      break;
-      case 1: // Dispensing
-        modeStartTime=millis();
-        digitalWrite(motorPin, HIGH);
-        if(motorSwitchDebounced.fell()){
-          digitalWrite(motorPin, LOW);
-          botMode = 0;
-          modeStartTime = 0;
-          Serial.println("Fed");
-          mqttclient.publish(controlTopic, (char*)("fed")); //3 is length
-        }
-        else if(millis() - modeStartTime > jamTimeout){
-          botMode = 2; //jammed
-          Serial.println("Jammed");
-          //mqttclient.publish(statusTopic, (byte*)("jam"), 3, true); //3 is length
-          mqttclient.publish(statusTopic, (char*)("jam"));
-        }
-      break;
-    }
+  }
+  feedButtonDebounced.update();
+  motorSwitchDebounced.update();
+  switch (botMode){
+    case 0: // Listening
+      if(feedButtonDebounced.fell()){
+        Serial.println("Button pressed");
+        botMode = 1;
+      }
+    break;
+    case 1: // Dispensing
+      modeStartTime=millis();
+      digitalWrite(motorPin, HIGH);
+      if(motorSwitchDebounced.fell()){
+        digitalWrite(motorPin, LOW);
+        botMode = 0;
+        modeStartTime = 0;
+        Serial.println("Fed");
+        mqttClient.publish(controlTopic, (char*)("fed"));
+      }
+      else if(millis() - modeStartTime > jamTimeout){
+        botMode = 2; //jammed
+        Serial.println("Jammed");
+        mqttClient.publish(statusTopic, (char*)("jam"));
+      }
+    break;
   }
 }
